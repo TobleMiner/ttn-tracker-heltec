@@ -8,6 +8,12 @@
 #include "nvs_flash.h"
 #include "driver/uart.h"
 #include "time.h"
+#include <stdbool.h>
+
+#include "ssd1306.h"
+#include "ssd1306_draw.h"
+#include "ssd1306_font.h"
+#include "ssd1306_default_if.h"
 
 #include "lmic.h"
 #include "nmea.h"
@@ -37,7 +43,11 @@ const unsigned TX_INTERVAL = 300;
 
 #define UART_BUFFER_SIZE 4096
 
+#define GPS_FIX_MAX_AGE 30
+
 static struct nmea nmea;
+
+struct SSD1306_Device display;
 
 // System services
 
@@ -208,7 +218,7 @@ static void uart_event_task(void *pvParameters)
             uart_read_bytes(UBLOX_UART_NUM, &pat, 1, 0);
 //            ESP_LOGI(TAG, "read data: %s", uart_buffer);
             uart_buffer[pos] = 0;
-//            ESP_LOGI(TAG, "nmea_parse: %d", nmea_parse_msg(&nmea, uart_buffer));
+            nmea_parse_msg(&nmea, uart_buffer);
           } else {
             ESP_LOGE(TAG, "pattern data too long, flushing data");
             uart_flush_input(UBLOX_UART_NUM);
@@ -222,6 +232,63 @@ static void uart_event_task(void *pvParameters)
     }
   }
   vTaskDelete(NULL);
+}
+
+// Display handling
+
+enum {
+  DISPLAY_LINE_GPS = 0,
+  DISPLAY_LINE_SATS,
+  DISPLAY_LINE_POS,
+};
+
+static void display_table_show_line(unsigned int line, char* left, char* right) {
+  unsigned int width = display.Width;
+  unsigned int height = display.Height;
+  unsigned int offset_y = line * (SSD1306_FontGetHeight(&display) + 1);
+  unsigned int lower_y = offset_y + SSD1306_FontGetHeight(&display);
+  int offset_x_l, offset_x_r, _;
+  SSD1306_FontGetAnchoredStringCoords(&display, &offset_x_l, &_, TextAnchor_NorthWest, left);
+  SSD1306_FontGetAnchoredStringCoords(&display, &offset_x_r, &_, TextAnchor_NorthEast, right);
+  SSD1306_DrawBox(&display, 0, offset_y, width - 1, lower_y, SSD_COLOR_BLACK, true);
+  SSD1306_FontDrawString(&display, offset_x_l, offset_y, left, SSD_COLOR_WHITE);
+  SSD1306_FontDrawString(&display, offset_x_r - 1, offset_y, right, SSD_COLOR_WHITE);
+}
+
+static void display_task(void* args) {
+  char fmt_buff[32];
+
+  assert(SSD1306_I2CMasterInitDefault() == true);
+  SSD1306_I2CMasterAttachDisplayDefault(&display, 128, 64, 0x3C, 16);
+  SSD1306_Clear(&display, SSD_COLOR_BLACK);
+  SSD1306_SetFont(&display, &Font_droid_sans_fallback_11x13);
+  SSD1306_FontDrawAnchoredString(&display, TextAnchor_NorthWest, "GPS: ", SSD_COLOR_WHITE);
+  SSD1306_Update(&display);
+
+  memset(fmt_buff, 0, sizeof(fmt_buff));
+  while(1) {
+    SSD1306_Clear(&display, SSD_COLOR_BLACK);
+    ESP_LOGI(TAG, "GPS fix @ %.6f %c %.6f %c quality: %u\n", nmea.fix.lat.deg, nmea.fix.lat.dir, nmea.fix.lng.deg, nmea.fix.lng.dir, nmea.fix.quality);
+
+// Handle fix
+    if(nmea.fix.quality == 0) {
+      snprintf(fmt_buff, sizeof(fmt_buff), "Offline");
+    } else {
+      snprintf(fmt_buff, sizeof(fmt_buff), "Lock (%s, %d SATs)", nmea.fix.quality > 1 ? "3D" : "2D", nmea.fix.num_sats);
+    }
+    display_table_show_line(DISPLAY_LINE_GPS, "GPS:", fmt_buff);
+
+// Handle number of satellites
+    snprintf(fmt_buff, sizeof(fmt_buff), "%d", nmea.num_sats);
+    display_table_show_line(DISPLAY_LINE_SATS, "Visible satellites:", fmt_buff);
+
+// Handle position
+    snprintf(fmt_buff, sizeof(fmt_buff), "%.5f %c %.5f %c", nmea.fix.lat.deg, nmea.fix.lat.dir, nmea.fix.lng.deg, nmea.fix.lng.dir);
+    display_table_show_line(DISPLAY_LINE_POS, fmt_buff, "");
+
+    SSD1306_Update(&display);
+    vTaskDelay(500 / portTICK_PERIOD_MS);
+  }
 }
 
 void app_main(void)
@@ -267,6 +334,10 @@ void app_main(void)
   ESP_ERROR_CHECK(uart_enable_pattern_det_intr(UBLOX_UART_NUM, '\n', 1, 100000, 0, 0));
   ESP_ERROR_CHECK(uart_pattern_queue_reset(UBLOX_UART_NUM, 32));
   xTaskCreate(uart_event_task, "uart_event_task", 2048, NULL, 12, NULL);
+
+// Display setup
+
+  xTaskCreate(display_task, "display_task", 4096, NULL, 12, NULL);
 
   do_send(&sendjob);
 
