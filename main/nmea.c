@@ -83,7 +83,7 @@ static int nmea_parse_gpgga(struct nmea* nmea, char* msg) {
   double hdop, alt_msl;
   int num_matched;
 
-  if((msg = skip_delim(msg)) || (msg = skip_delim(msg))) {
+  if(!((msg = skip_delim(msg)) && (msg = skip_delim(msg)))) {
     return NMEA_SYNTAX_ERROR;
   }
 
