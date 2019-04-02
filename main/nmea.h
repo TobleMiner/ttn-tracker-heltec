@@ -32,5 +32,10 @@ struct nmea {
 
 // Initialize nmea struct
 void nmea_init(struct nmea* nmea);
+
 // Parse nul-terminated NMEA message
 int nmea_parse_msg(struct nmea* nmea, char* msg);
+
+bool nmea_fix_valid(struct nmea* nmea);
+
+void nmea_fix_age(struct nmea* nmea, struct timeval* age);

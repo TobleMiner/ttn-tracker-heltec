@@ -10,6 +10,8 @@
 #include "util.h"
 #include "strutil.h"
 
+#define FIX_TIMEOUT 30
+
 static bool check_csum(char* msg) {
   uint8_t csum;
   size_t len = strlen(msg);
@@ -86,6 +88,8 @@ static int nmea_parse_gpgsv(struct nmea* nmea, char* msg) {
   return sscanf(msg, "$GPGSV,%*u,%*u,%u", &nmea->num_sats) == 1 ? NMEA_OK : NMEA_SYNTAX_ERROR;
 }
 
+#define FIX_VALID(x) ((x) > 0)
+
 static int nmea_parse_gpgga(struct nmea* nmea, char* msg) {
   struct coordinate lat, lng;
   unsigned int fix, num_sats;
@@ -109,13 +113,15 @@ static int nmea_parse_gpgga(struct nmea* nmea, char* msg) {
     return NMEA_SYNTAX_ERROR;
   }
 
-  nmea->fix.quality = fix;
-  nmea->fix.lat = lat;
-  nmea->fix.lng = lng;
-  nmea->fix.num_sats = num_sats;
-  nmea->fix.hdop = hdop;
-  nmea->fix.alt_msl = alt_msl;
-  sys_get_time(&nmea->fix.time);
+  if(FIX_VALID(fix)) {
+    nmea->fix.quality = fix;
+    nmea->fix.lat = lat;
+    nmea->fix.lng = lng;
+    nmea->fix.num_sats = num_sats;
+    nmea->fix.hdop = hdop;
+    nmea->fix.alt_msl = alt_msl;
+    sys_get_time(&nmea->fix.time);
+  }
 
   return NMEA_OK;
 }
@@ -139,4 +145,25 @@ int nmea_parse_msg(struct nmea* nmea, char* msg) {
   }
 
   return NMEA_UNKNOWN_MESSAGE;
+}
+
+bool nmea_fix_valid(struct nmea* nmea) {
+  struct timeval diff = {
+    .tv_sec = FIX_TIMEOUT,
+    .tv_usec = 0
+  };
+  struct timeval now;
+  struct timeval timeout;
+  if(!FIX_VALID(nmea->fix.quality)) {
+    return false;
+  }
+  sys_get_time(&now);
+  timeradd(&nmea->fix.time, &diff, &timeout);
+  return timercmp(&now, &timeout, <);
+}
+
+void nmea_fix_age(struct nmea* nmea, struct timeval* age) {
+  struct timeval now;
+  sys_get_time(&now);
+  timersub(&now, &nmea->fix.time, age);
 }

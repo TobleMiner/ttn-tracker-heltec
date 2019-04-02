@@ -240,6 +240,7 @@ enum {
   DISPLAY_LINE_GPS = 0,
   DISPLAY_LINE_SATS,
   DISPLAY_LINE_POS,
+  DISPLAY_LINE_AGE,
 };
 
 static void display_table_show_line(unsigned int line, char* left, char* right) {
@@ -267,14 +268,15 @@ static void display_task(void* args) {
 
   memset(fmt_buff, 0, sizeof(fmt_buff));
   while(1) {
+    bool fix_valid = nmea_fix_valid(&nmea);
     SSD1306_Clear(&display, SSD_COLOR_BLACK);
     ESP_LOGI(TAG, "GPS fix @ %.6f %c %.6f %c quality: %u\n", nmea.fix.lat.deg, nmea.fix.lat.dir, nmea.fix.lng.deg, nmea.fix.lng.dir, nmea.fix.quality);
 
 // Handle fix
-    if(nmea.fix.quality == 0) {
-      snprintf(fmt_buff, sizeof(fmt_buff), "Offline");
-    } else {
+    if(fix_valid) {
       snprintf(fmt_buff, sizeof(fmt_buff), "Lock (%s, %d SATs)", nmea.fix.quality > 1 ? "3D" : "2D", nmea.fix.num_sats);
+    } else {
+      snprintf(fmt_buff, sizeof(fmt_buff), "Offline");
     }
     display_table_show_line(DISPLAY_LINE_GPS, "GPS:", fmt_buff);
 
@@ -283,8 +285,22 @@ static void display_task(void* args) {
     display_table_show_line(DISPLAY_LINE_SATS, "Visible satellites:", fmt_buff);
 
 // Handle position
-    snprintf(fmt_buff, sizeof(fmt_buff), "%.5f %c %.5f %c", nmea.fix.lat.deg, nmea.fix.lat.dir, nmea.fix.lng.deg, nmea.fix.lng.dir);
+    if(fix_valid) {
+      snprintf(fmt_buff, sizeof(fmt_buff), "%.5f %c %.5f %c", nmea.fix.lat.deg, nmea.fix.lat.dir, nmea.fix.lng.deg, nmea.fix.lng.dir);
+    } else {
+      snprintf(fmt_buff, sizeof(fmt_buff), "Fix invalid");
+    }
     display_table_show_line(DISPLAY_LINE_POS, fmt_buff, "");
+
+// Show age of fix
+    if(fix_valid) {
+      struct timeval age;
+      nmea_fix_age(&nmea, &age);
+      snprintf(fmt_buff, sizeof(fmt_buff), "Age of fix: %lu", age.tv_sec);
+    } else {
+      snprintf(fmt_buff, sizeof(fmt_buff), "Fix timeout");
+    }
+    display_table_show_line(DISPLAY_LINE_AGE, fmt_buff, "");
 
     SSD1306_Update(&display);
     vTaskDelay(500 / portTICK_PERIOD_MS);
