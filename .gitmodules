@@ -1,0 +1,6 @@
+[submodule "components/lmic-esp-idf"]
+	path = components/lmic-esp-idf
+	url = https://github.com/TobleMiner/lmic-esp-idf.git
+[submodule "components/tarablessd1306"]
+	path = components/tarablessd1306
+	url = https://github.com/TaraHoleInIt/tarablessd1306.git
