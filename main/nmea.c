@@ -45,13 +45,13 @@ static char* skip_delim(char* ptr) {
   return pos + 1;
 }
 
-static int parse_coordinate(char** str, struct coordinate* coord) {
+static int parse_coordinate(char** str, struct coordinate* coord, bool is_lng) {
   struct coordinate val;
   unsigned int deg;
   // int, not off_t because sscanf demands it
   int offset = 0;
-  int parsed_args = sscanf(*str, "%2u%lf,%c,%n", &deg, &val.deg, &val.dir, &offset);
-  if(parsed_args == 4) {
+  int parsed_args = sscanf(*str, is_lng ? "%3u%lf,%c,%n" : "%2u%lf,%c,%n", &deg, &val.deg, &val.dir, &offset);
+  if(parsed_args == 3) {
     // Full expected format
     *str += offset;
   } else {
@@ -73,6 +73,14 @@ static int parse_coordinate(char** str, struct coordinate* coord) {
   return 0;
 }
 
+static int parse_coordinate_lat(char** str, struct coordinate* coord) {
+  return parse_coordinate(str, coord, false);
+}
+
+static int parse_coordinate_lng(char** str, struct coordinate* coord) {
+  return parse_coordinate(str, coord, true);
+}
+
 static int nmea_parse_gpgsv(struct nmea* nmea, char* msg) {
   return sscanf(msg, "$GPGSV,%*u,%*u,%u", &nmea->num_sats) == 1 ? NMEA_OK : NMEA_SYNTAX_ERROR;
 }
@@ -87,10 +95,10 @@ static int nmea_parse_gpgga(struct nmea* nmea, char* msg) {
     return NMEA_SYNTAX_ERROR;
   }
 
-  if(parse_coordinate(&msg, &lat) < 0) {
+  if(parse_coordinate_lat(&msg, &lat) < 0) {
     return NMEA_SYNTAX_ERROR;
   }
-  if(parse_coordinate(&msg, &lng) < 0) {
+  if(parse_coordinate_lng(&msg, &lng) < 0) {
     return NMEA_SYNTAX_ERROR;
   }
     
