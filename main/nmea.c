@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <errno.h>
+#include <sys/time.h>
 
 #include "nmea.h"
 #include "util.h"
@@ -114,6 +115,7 @@ static int nmea_parse_gpgga(struct nmea* nmea, char* msg) {
   nmea->fix.num_sats = num_sats;
   nmea->fix.hdop = hdop;
   nmea->fix.alt_msl = alt_msl;
+  sys_get_time(&nmea->fix.time);
 
   return NMEA_OK;
 }

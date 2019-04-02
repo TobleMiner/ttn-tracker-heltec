@@ -7,6 +7,7 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "driver/uart.h"
+#include "time.h"
 
 #include "lmic.h"
 #include "nmea.h"
@@ -37,6 +38,13 @@ const unsigned TX_INTERVAL = 300;
 #define UART_BUFFER_SIZE 4096
 
 static struct nmea nmea;
+
+// System services
+
+void sys_get_time(struct timeval* t) {
+  t->tv_sec = osticks2us(os_getTime()) / 1000000UL;
+  t->tv_usec = osticks2us(os_getTime()) - t->tv_sec * 1000000UL;
+}
 
 // LMIC
 

@@ -1,5 +1,9 @@
 #pragma once
 
+#include <stdbool.h>
+
+#include "time.h"
+
 enum {
   NMEA_OK = 0,
   NMEA_CSUM_INVALID,
@@ -20,6 +24,7 @@ struct nmea {
     double alt_msl;
     unsigned int quality;
     unsigned int num_sats; // Number used for fix
+    struct timeval time; // Time of fix message
   } fix;
   unsigned int num_sats; // Number visible
 };
