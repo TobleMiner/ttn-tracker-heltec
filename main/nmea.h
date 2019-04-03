@@ -26,6 +26,9 @@ struct nmea {
     unsigned int num_sats; // Number used for fix
     struct timeval time; // Time of fix message
   } fix;
+  struct {
+    unsigned int fix;
+  } nav;
   unsigned int num_sats; // Number visible
 };
 
@@ -37,5 +40,9 @@ void nmea_init(struct nmea* nmea);
 int nmea_parse_msg(struct nmea* nmea, char* msg);
 
 bool nmea_fix_valid(struct nmea* nmea);
+
+bool nmea_fix_2d(struct nmea* nmea);
+
+bool nmea_fix_3d(struct nmea* nmea);
 
 void nmea_fix_age(struct nmea* nmea, struct timeval* age);

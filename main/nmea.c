@@ -126,6 +126,9 @@ static int nmea_parse_gpgga(struct nmea* nmea, char* msg) {
   return NMEA_OK;
 }
 
+static int nmea_parse_gpgsa(struct nmea* nmea, char* msg) {
+  return sscanf(msg, "$GPGSA,%*c,%u", &nmea->nav.fix) == 1 ? NMEA_OK : NMEA_SYNTAX_ERROR;
+}
 
 void nmea_init(struct nmea* nmea) {
   memset(nmea, 0, sizeof(*nmea));
@@ -142,6 +145,10 @@ int nmea_parse_msg(struct nmea* nmea, char* msg) {
 
   if(startswith(msg, "$GPGGA")) {
     return nmea_parse_gpgga(nmea, msg);
+  }
+
+  if(startswith(msg, "$GPGSA")) {
+    return nmea_parse_gpgsa(nmea, msg);
   }
 
   return NMEA_UNKNOWN_MESSAGE;
@@ -166,4 +173,13 @@ void nmea_fix_age(struct nmea* nmea, struct timeval* age) {
   struct timeval now;
   sys_get_time(&now);
   timersub(&now, &nmea->fix.time, age);
+}
+
+bool nmea_fix_2d(struct nmea* nmea) {
+  return nmea_fix_valid(nmea) && nmea->nav.fix == 2 &&
+    (nmea->fix.quality == 1 || nmea->fix.quality == 2);
+}
+bool nmea_fix_3d(struct nmea* nmea) {
+  return nmea_fix_valid(nmea) && nmea->nav.fix == 3 &&
+    (nmea->fix.quality == 1 || nmea->fix.quality == 2);
 }
