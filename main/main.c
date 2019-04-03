@@ -9,6 +9,7 @@
 #include "driver/uart.h"
 #include "time.h"
 #include <stdbool.h>
+#include <math.h>
 
 #include "ssd1306.h"
 #include "ssd1306_draw.h"
@@ -17,6 +18,8 @@
 
 #include "lmic.h"
 #include "nmea.h"
+#include "util.h"
+#include "minifloat.h"
 
 
 const lmic_pinmap lmic_pins = {
@@ -34,8 +37,6 @@ u4_t DEVADDR = 0x26011766;
 void os_getArtEui (u1_t* buf) { }
 void os_getDevEui (u1_t* buf) { }
 void os_getDevKey (u1_t* buf) { }
-
-static uint8_t mydata[] = "Hey!";
 
 static osjob_t sendjob;
 
@@ -61,11 +62,28 @@ void sys_get_time(struct timeval* t) {
 void do_send(osjob_t* j) {
   if (LMIC.opmode & OP_TXRXPEND) {
       printf("OP_TXRXPEND, not sending");
-  } else {
+			os_setTimedCallback(&sendjob, os_getTime() + sec2osticks(1), do_send);
+  } else if(nmea_fix_valid(&nmea)) {
+      uint8_t hdop_num;
+      uint8_t hdop_frac;
+      struct {
+        float lat;
+        float lng;
+        uint8_t hdop;
+        uint8_t alt;
+      } txdata;
       // Prepare upstream data transmission at the next possible time.
-      LMIC_setTxData2(1, mydata, sizeof(mydata)-1, 0);
+      txdata.lat = nmea.fix.lat.deg;
+      txdata.lng = nmea.fix.lng.deg;
+      hdop_num = max(0, min(15, (int)nmea.fix.hdop));
+      hdop_frac = (uint8_t)ceil((nmea.fix.hdop - (double)hdop_num) * 10);
+      txdata.hdop = (hdop_frac & 0xf) | ((hdop_num & 0xf) << 4);
+      txdata.alt = float_to_ufloat8(nmea.fix.alt_msl);
+      LMIC_setTxData2(1, &txdata, sizeof(txdata), 0);
       printf("Packet queued");
-  }	
+  }	else {
+			os_setTimedCallback(&sendjob, os_getTime() + sec2osticks(1), do_send);
+  }
 }
 
 void onEvent (ev_t ev) {
@@ -113,8 +131,6 @@ void onEvent (ev_t ev) {
                 // Prepare upstream data transmission at the next possible time.
 			    printf("Scheduling message for: %d\n", (s4_t)(os_getTime() + sec2osticks(TX_INTERVAL)));
 				os_setTimedCallback(&sendjob, os_getTime() + sec2osticks(TX_INTERVAL), do_send);
-//                LMIC_setTxData2(1, mydata, sizeof(mydata)-1, 0);
-//                printf("Packet queued");
             }
             break;
         case EV_LOST_TSYNC:
