@@ -287,7 +287,9 @@ static void display_task(void* args) {
   while(1) {
     bool fix_valid = nmea_fix_valid(&nmea);
     SSD1306_Clear(&display, SSD_COLOR_BLACK);
-    ESP_LOGI(TAG, "GPS fix @ %.6f %c %.6f %c quality: %u\n", nmea.fix.lat.deg, nmea.fix.lat.dir, nmea.fix.lng.deg, nmea.fix.lng.dir, nmea.fix.quality);
+    ESP_LOGI(TAG, "GPS fix @ %.6f %c %.6f %c height: %.2f m hdop: %.2f quality: %u fix: %s SATs: %u\n", nmea.fix.lat.deg,
+      nmea.fix.lat.dir, nmea.fix.lng.deg, nmea.fix.lng.dir, nmea.fix.alt_msl, nmea.fix.hdop, nmea.fix.quality,
+      nmea_fix_3d(&nmea) ? "3D" : nmea_fix_2d(&nmea) ? "2D" : "None", nmea.num_sats);
 
 // Handle fix
     if(fix_valid) {
