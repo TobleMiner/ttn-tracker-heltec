@@ -74,8 +74,8 @@ void do_send(osjob_t* j) {
         uint8_t alt;
       } txdata;
       // Prepare upstream data transmission at the next possible time.
-      txdata.lat = double_to_fix24(nmea.fix.lat.deg);
-      txdata.lng = double_to_fix24(nmea.fix.lng.deg);
+      txdata.lat = double_to_fix24(nmea.fix.lat.dir != 'N' ? -nmea.fix.lat.deg : nmea.fix.lat.deg);
+      txdata.lng = double_to_fix24(nmea.fix.lng.dir != 'E' ? -nmea.fix.lng.deg : nmea.fix.lng.deg);
       hdop_num = max(0, min(15, (int)nmea.fix.hdop));
       hdop_frac = (uint8_t)ceil((nmea.fix.hdop - (double)hdop_num) * 10);
       txdata.hdop = (hdop_frac & 0xf) | ((hdop_num & 0xf) << 4);
