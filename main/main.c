@@ -62,7 +62,7 @@ void sys_get_time(struct timeval* t) {
 void do_send(osjob_t* j) {
   if (LMIC.opmode & OP_TXRXPEND) {
       printf("OP_TXRXPEND, not sending");
-			os_setTimedCallback(&sendjob, os_getTime() + sec2osticks(1), do_send);
+      os_setTimedCallback(&sendjob, os_getTime() + sec2osticks(1), do_send);
   } else if(nmea_fix_valid(&nmea)) {
       uint8_t hdop_num;
       uint8_t hdop_frac;
@@ -81,8 +81,8 @@ void do_send(osjob_t* j) {
       txdata.alt = float_to_ufloat8(nmea.fix.alt_msl);
       LMIC_setTxData2(1, &txdata, sizeof(txdata), 0);
       printf("Packet queued");
-  }	else {
-			os_setTimedCallback(&sendjob, os_getTime() + sec2osticks(1), do_send);
+  } else {
+      os_setTimedCallback(&sendjob, os_getTime() + sec2osticks(1), do_send);
   }
 }
 
@@ -129,8 +129,8 @@ void onEvent (ev_t ev) {
                 printf("OP_TXRXPEND, not sending");
             } else {
                 // Prepare upstream data transmission at the next possible time.
-			    printf("Scheduling message for: %d\n", (s4_t)(os_getTime() + sec2osticks(TX_INTERVAL)));
-				os_setTimedCallback(&sendjob, os_getTime() + sec2osticks(TX_INTERVAL), do_send);
+          printf("Scheduling message for: %d\n", (s4_t)(os_getTime() + sec2osticks(TX_INTERVAL)));
+        os_setTimedCallback(&sendjob, os_getTime() + sec2osticks(TX_INTERVAL), do_send);
             }
             break;
         case EV_LOST_TSYNC:
