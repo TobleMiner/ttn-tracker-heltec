@@ -41,7 +41,7 @@ void os_getDevKey (u1_t* buf) { }
 
 static osjob_t sendjob;
 
-const unsigned TX_INTERVAL = 300;
+const unsigned TX_INTERVAL = 120;
 
 #define UART_BUFFER_SIZE 4096
 
