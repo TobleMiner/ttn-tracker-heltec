@@ -7,6 +7,7 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "driver/uart.h"
+#include "driver/i2c.h"
 #include "time.h"
 #include <stdbool.h>
 #include <math.h>
@@ -41,7 +42,7 @@ void os_getDevKey (u1_t* buf) { }
 
 static osjob_t sendjob;
 
-const unsigned TX_INTERVAL = 120;
+const unsigned TX_INTERVAL = 60;
 
 #define UART_BUFFER_SIZE 4096
 
@@ -50,6 +51,8 @@ const unsigned TX_INTERVAL = 120;
 static struct nmea nmea;
 
 struct SSD1306_Device display;
+
+uint16_t battery_mv = 0;
 
 // System services
 
@@ -254,7 +257,8 @@ static void uart_event_task(void *pvParameters)
 // Display handling
 
 enum {
-  DISPLAY_LINE_GPS = 0,
+  DISPLAY_LINE_BATTERY = 0,
+  DISPLAY_LINE_GPS,
   DISPLAY_LINE_SATS,
   DISPLAY_LINE_POS,
   DISPLAY_LINE_AGE,
@@ -263,7 +267,7 @@ enum {
 static void display_table_show_line(unsigned int line, char* left, char* right) {
   unsigned int width = display.Width;
   unsigned int height = display.Height;
-  unsigned int offset_y = line * (SSD1306_FontGetHeight(&display) + 1);
+  unsigned int offset_y = line * (SSD1306_FontGetHeight(&display) + 0);
   unsigned int lower_y = offset_y + SSD1306_FontGetHeight(&display);
   int offset_x_l, offset_x_r, _;
   SSD1306_FontGetAnchoredStringCoords(&display, &offset_x_l, &_, TextAnchor_NorthWest, left);
@@ -291,9 +295,13 @@ static void display_task(void* args) {
       nmea.fix.lat.dir, nmea.fix.lng.deg, nmea.fix.lng.dir, nmea.fix.alt_msl, nmea.fix.hdop, nmea.fix.quality,
       nmea_fix_3d(&nmea) ? "3D" : nmea_fix_2d(&nmea) ? "2D" : "None", nmea.num_sats);
 
+// Handle battery voltage
+    snprintf(fmt_buff, sizeof(fmt_buff), "%u mV", battery_mv);
+    display_table_show_line(DISPLAY_LINE_BATTERY, "Battery:", fmt_buff);
+
 // Handle fix
     if(fix_valid) {
-      snprintf(fmt_buff, sizeof(fmt_buff), "Lock (%s, %d SATs)", nmea.fix.quality > 1 ? "3D" : "2D", nmea.fix.num_sats);
+      snprintf(fmt_buff, sizeof(fmt_buff), "Lock (%s, %d SATs)", nmea_fix_3d(&nmea) ? "3D" : "2D", nmea.fix.num_sats);
     } else {
       snprintf(fmt_buff, sizeof(fmt_buff), "Offline");
     }
@@ -322,6 +330,69 @@ static void display_task(void* args) {
     display_table_show_line(DISPLAY_LINE_AGE, fmt_buff, "");
 
     SSD1306_Update(&display);
+    vTaskDelay(500 / portTICK_PERIOD_MS);
+  }
+}
+
+// I2C
+static esp_err_t i2c_read_reg(i2c_port_t i2c_num, uint8_t i2c_addr, uint8_t i2c_reg, uint8_t* data) {
+  esp_err_t err;
+  i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+  if(!cmd) {
+    err = ESP_ERR_NO_MEM;
+    goto fail;
+  }
+  if((err = i2c_master_start(cmd))) {
+    goto fail_link;
+  }
+  // first, send device address (indicating write) & register to be read
+  if((err = i2c_master_write_byte(cmd, ( i2c_addr << 1 ), 1))) {
+    goto fail_link;
+  }
+  // send register we want
+  if((err = i2c_master_write_byte(cmd, i2c_reg, 1))) {
+    goto fail_link;
+  }
+  // Send repeated start
+  if((err = i2c_master_start(cmd))) {
+    goto fail_link;
+  }
+  // now send device address (indicating read) & read data
+  if((err = i2c_master_write_byte(cmd, ( i2c_addr << 1 ) | I2C_MASTER_READ, 1))) {
+    goto fail_link;
+  }
+  if((err = i2c_master_read_byte(cmd, data, 1))) {
+    goto fail_link;
+  }
+  if((err = i2c_master_stop(cmd))) {
+    goto fail_link;
+  }
+  err = i2c_master_cmd_begin(i2c_num, cmd, 1000 / portTICK_RATE_MS);
+fail_link:
+  i2c_cmd_link_delete(cmd);
+fail:
+  return err;
+}
+
+static void battery_task(void* args) {
+  while(true) {
+    union {
+      struct {
+        uint8_t low;
+        uint8_t high;
+      } bytes;
+      uint16_t mv;
+    } voltage;
+    // Half-soft i2c implementation on ATtiny 84 is still a little shitty
+    // just keep retrying until read eventually succeeds
+    if(i2c_read_reg(I2C_NUM_1, 0x42, 2, &voltage.bytes.high)) {
+      continue;
+    }
+    if(i2c_read_reg(I2C_NUM_1, 0x42, 3, &voltage.bytes.low)) {
+      continue;
+    }
+    battery_mv = voltage.mv;
+
     vTaskDelay(500 / portTICK_PERIOD_MS);
   }
 }
@@ -369,6 +440,28 @@ void app_main(void)
   ESP_ERROR_CHECK(uart_enable_pattern_det_intr(UBLOX_UART_NUM, '\n', 1, 100000, 0, 0));
   ESP_ERROR_CHECK(uart_pattern_queue_reset(UBLOX_UART_NUM, 32));
   xTaskCreate(uart_event_task, "uart_event_task", 2048, NULL, 12, NULL);
+
+// Battery controller setup
+
+  i2c_config_t i2c_config = {
+    .mode = I2C_MODE_MASTER,
+    .sda_io_num = 23,
+    .scl_io_num = 22,
+    .master.clk_speed = 100,
+  };
+
+  ESP_ERROR_CHECK(i2c_param_config(I2C_NUM_1, &i2c_config));
+  ESP_ERROR_CHECK(i2c_driver_install(I2C_NUM_1, I2C_MODE_MASTER, 0, 0, 0));
+
+/*
+  uint8_t i2c_data;
+  ESP_ERROR_CHECK(i2c_read_reg(I2C_NUM_1, 0x42, 2, &i2c_data));
+  ESP_LOGI("i2c", "Read high byte of battery voltage: %u\n", i2c_data);
+  ESP_ERROR_CHECK(i2c_read_reg(I2C_NUM_1, 0x42, 3, &i2c_data));
+  ESP_LOGI("i2c", "Read low byte of battery voltage: %u\n", i2c_data);
+*/
+
+  xTaskCreate(battery_task, "battery_task", 2048, NULL, 12, NULL);
 
 // Display setup
 
