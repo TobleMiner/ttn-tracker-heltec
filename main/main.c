@@ -439,7 +439,7 @@ void app_main(void)
   ESP_ERROR_CHECK(uart_driver_install(UBLOX_UART_NUM, UART_BUFFER_SIZE, 0, 32, &ublox_uart_queue, 0));
   ESP_ERROR_CHECK(uart_enable_pattern_det_intr(UBLOX_UART_NUM, '\n', 1, 100000, 0, 0));
   ESP_ERROR_CHECK(uart_pattern_queue_reset(UBLOX_UART_NUM, 32));
-  xTaskCreate(uart_event_task, "uart_event_task", 2048, NULL, 12, NULL);
+  xTaskCreate(uart_event_task, "uart_event_task", 4096, NULL, 12, NULL);
 
 // Battery controller setup
 
